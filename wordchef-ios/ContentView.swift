@@ -9,21 +9,17 @@ import SwiftUI
 
 let apiKeyStorageKey = "wordchefApiKey"
 
-struct EmbeddingsResponse: Codable {
-    let input: InputData
-}
-
-struct InputData: Codable {
-    let words: [String]
-    let embeddings: [[Double]]
+struct ImageResponse: Codable {
+    let label: String
+    let image_base64: String
 }
 
 struct ContentView: View {
     @State private var query: String = ""
-    @State private var responseText: String = ""
+    @State private var apiKeyInput: String = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var apiKeyInput: String = ""
+    @State private var fetchedImage: Image?
 
     init() {
         // Try to get from UserDefaults first
@@ -38,15 +34,15 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            TextField("Enter words...", text: $query)
+            TextField("Enter word(s)...", text: $query)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
 
-            Button("Search") {
+            Button("Get Image") {
                 Task {
-                    await fetchEmbeddings()
+                    await fetchImage()
                 }
             }
             .disabled(query.isEmpty || isLoading)
@@ -70,9 +66,13 @@ struct ContentView: View {
                     .foregroundColor(.red)
             }
 
-            ScrollView {
-                Text(responseText)
+            if let image = fetchedImage {
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 300, maxHeight: 300)
                     .padding()
+                    .border(Color.gray)
             }
 
             Spacer()
@@ -94,12 +94,12 @@ struct ContentView: View {
         return apiKey
     }
 
-    func fetchEmbeddings() async {
+    func fetchImage() async {
         isLoading = true
         errorMessage = nil
-        responseText = ""
+        fetchedImage = nil
 
-        guard let url = URL(string: "https://wordchef.app/api/nearest.php?words=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
+        guard let url = URL(string: "https://wordchef.app/api/image.php?words=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
             errorMessage = "Invalid URL"
             isLoading = false
             return
@@ -119,17 +119,14 @@ struct ContentView: View {
             }
 
             let decoder = JSONDecoder()
-            let embeddingsResponse = try decoder.decode(EmbeddingsResponse.self, from: data)
+            let imageResponse = try decoder.decode(ImageResponse.self, from: data)
 
-            var resultString = "Words:\n"
-            resultString += embeddingsResponse.input.words.joined(separator: ", ")
-            resultString += "\n\nEmbeddings:\n"
-            for vector in embeddingsResponse.input.embeddings {
-                resultString += vector.map { String(format: "%.3f", $0) }.joined(separator: ", ")
-                resultString += "\n"
+            if let imageData = Data(base64Encoded: imageResponse.image_base64),
+               let uiImage = UIImage(data: imageData) {
+                fetchedImage = Image(uiImage: uiImage)
+            } else {
+                errorMessage = "Failed to decode image data"
             }
-
-            responseText = resultString
         } catch {
             errorMessage = error.localizedDescription
         }

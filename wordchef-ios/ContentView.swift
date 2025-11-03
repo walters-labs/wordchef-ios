@@ -25,13 +25,10 @@ struct NearestResponse: Codable {
     let nearest: [Neighbor]
 }
 
-struct BulkImageResponse: Codable {
-    let images: [String: String]
-}
-
 struct ContentView: View {
     @State private var query: String = ""
     @State private var apiKeyInput: String = ""
+    @State private var neighborLimit: String = "5"
     @State private var isLoading = false
     @State private var errorMessage: String?
     
@@ -39,7 +36,6 @@ struct ContentView: View {
     @State private var neighborImages: [String: Image] = [:]
 
     init() {
-        // Load saved API key or plist key if available
         if let storedKey = UserDefaults.standard.string(forKey: apiKeyStorageKey), !storedKey.isEmpty {
             _apiKeyInput = State(initialValue: storedKey)
         } else if let plistKey = ContentView.loadApiKeyFromPlist() {
@@ -54,6 +50,11 @@ struct ContentView: View {
             TextField("Enter word(s)...", text: $query)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding(.horizontal)
+
+            TextField("Number of neighbors (default 5)", text: $neighborLimit)
+                .keyboardType(.numberPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding(.horizontal)
 
@@ -129,8 +130,17 @@ struct ContentView: View {
         errorMessage = nil
         neighborImages = [:]
 
-        // 1. Fetch nearest neighbors
-        guard let nearestUrl = URL(string: "https://wordchef.app/api/nearest.php?words=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
+        guard let encodedWords = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            errorMessage = "Invalid words input"
+            isLoading = false
+            return
+        }
+
+        // Validate neighbor limit input (default to 5 if invalid)
+        let limit = Int(neighborLimit) ?? 5
+        let cappedLimit = max(1, min(limit, 20))  // Cap limit between 1 and 20
+
+        guard let nearestUrl = URL(string: "https://wordchef.app/api/nearest.php?words=\(encodedWords)&limit=\(cappedLimit)") else {
             errorMessage = "Invalid nearest URL"
             isLoading = false
             return
@@ -160,7 +170,7 @@ struct ContentView: View {
                 return
             }
 
-            // 2. Fetch bulk images for these words
+            // Fetch bulk images for these words
             try await fetchBulkImages(for: words)
 
         } catch {
@@ -202,7 +212,6 @@ struct ContentView: View {
                let uiImage = UIImage(data: imageData) {
                 loadedImages[word] = Image(uiImage: uiImage)
             } else {
-                // Could optionally handle partial failures
                 print("Failed to decode image for word: \(word)")
             }
         }

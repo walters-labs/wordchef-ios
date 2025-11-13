@@ -27,23 +27,15 @@ struct NearestResponse: Codable {
 
 struct ContentView: View {
     @State private var query: String = ""
-    @State private var apiKeyInput: String = ""
     @State private var neighborLimit: String = "5"
     @State private var isLoading = false
     @State private var errorMessage: String?
     
     // Store images keyed by word
     @State private var neighborImages: [String: Image] = [:]
-
-    init() {
-        if let storedKey = UserDefaults.standard.string(forKey: apiKeyStorageKey), !storedKey.isEmpty {
-            _apiKeyInput = State(initialValue: storedKey)
-        } else if let plistKey = ContentView.loadApiKeyFromPlist() {
-            _apiKeyInput = State(initialValue: plistKey)
-        } else {
-            _apiKeyInput = State(initialValue: "")
-        }
-    }
+    
+    // Load API key once, no UI input needed
+    private let apiKey: String = ContentView.loadApiKeyFromPlist() ?? ""
 
     var body: some View {
         VStack(spacing: 16) {
@@ -64,17 +56,6 @@ struct ContentView: View {
                 }
             }
             .disabled(query.isEmpty || isLoading)
-            .padding(.horizontal)
-
-            TextField("Enter API Key", text: $apiKeyInput)
-                .disableAutocorrection(true)
-                .autocapitalization(.none)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding(.horizontal)
-
-            Button("Save API Key") {
-                saveApiKey(apiKeyInput)
-            }
             .padding(.horizontal)
 
             if isLoading {
@@ -111,10 +92,6 @@ struct ContentView: View {
         .padding(.top)
     }
 
-    func saveApiKey(_ key: String) {
-        UserDefaults.standard.set(key, forKey: apiKeyStorageKey)
-    }
-
     static func loadApiKeyFromPlist() -> String? {
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
@@ -136,9 +113,8 @@ struct ContentView: View {
             return
         }
 
-        // Validate neighbor limit input (default to 5 if invalid)
         let limit = Int(neighborLimit) ?? 5
-        let cappedLimit = max(1, min(limit, 20))  // Cap limit between 1 and 20
+        let cappedLimit = max(1, min(limit, 20))
 
         guard let nearestUrl = URL(string: "https://wordchef.app/api/nearest.php?words=\(encodedWords)&limit=\(cappedLimit)") else {
             errorMessage = "Invalid nearest URL"
@@ -147,7 +123,7 @@ struct ContentView: View {
         }
 
         var nearestRequest = URLRequest(url: nearestUrl)
-        nearestRequest.setValue(apiKeyInput, forHTTPHeaderField: "X-API-Key")
+        nearestRequest.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
 
         do {
             let (nearestData, nearestResponse) = try await URLSession.shared.data(for: nearestRequest)
@@ -170,7 +146,6 @@ struct ContentView: View {
                 return
             }
 
-            // Fetch bulk images for these words
             try await fetchBulkImages(for: words)
 
         } catch {
@@ -180,7 +155,7 @@ struct ContentView: View {
     }
 
     func fetchBulkImages(for words: [String]) async throws {
-        guard let url = URL(string: "https://wordchef.app/api/bulk_image.php?api_key=\(apiKeyInput)") else {
+        guard let url = URL(string: "https://wordchef.app/api/bulk_image.php?api_key=\(apiKey)") else {
             errorMessage = "Invalid bulk image URL"
             isLoading = false
             return
